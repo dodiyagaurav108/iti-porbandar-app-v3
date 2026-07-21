@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { KeyRound, User as UserIcon, ShieldAlert, Sparkles, AlertCircle } from "lucide-react";
 import { User, UserRole } from "../types";
 import { getUsers, addAuditLog } from "../utils/storage";
+import { isSupabaseConfigured, supabase } from "../utils/supabaseClient";
 import ItiLogo from "./ItiLogo";
 
 interface LoginProps {
@@ -12,53 +13,151 @@ export default function Login({ onLoginSuccess }: LoginProps) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg("");
+    setIsLoggingIn(true);
 
-    const allUsers = getUsers();
-    const user = allUsers.find(
-      u => u.username.toLowerCase() === username.toLowerCase().trim()
-    );
+    try {
+      const allUsers = getUsers();
+      const uNameNormalized = username.toLowerCase().trim();
 
-    if (!user) {
-      setErrorMsg("Incorrect username. S.I. accounts must be registered by the Institute Admin.");
-      return;
+      if (uNameNormalized !== "admin") {
+        setErrorMsg("Access Denied. Only the Institute Administrator is authorized to log in.");
+        setIsLoggingIn(false);
+        return;
+      }
+
+      const user = allUsers.find(
+        u => u.username.toLowerCase() === "admin"
+      );
+
+      if (!user) {
+        setErrorMsg("System Error: Admin user account not found in database.");
+        setIsLoggingIn(false);
+        return;
+      }
+
+      if (user.password !== password) {
+        setErrorMsg("Invalid security password. Please check your credentials.");
+        setIsLoggingIn(false);
+        return;
+      }
+
+      if (!user.isActive) {
+        setErrorMsg("This Admin account is currently deactivated. Please contact support.");
+        setIsLoggingIn(false);
+        return;
+      }
+
+      // If Supabase is configured, use actual Supabase Auth!
+      if (isSupabaseConfigured) {
+        const email = `${uNameNormalized}@itiporbandar.gov.in`;
+        let { data, error } = await supabase.auth.signInWithPassword({
+          email,
+          password
+        });
+
+        if (error) {
+          // Attempt auto-provisioning in Supabase Auth
+          const { error: signUpError } = await supabase.auth.signUp({
+            email,
+            password,
+            options: {
+              data: {
+                username: user.username,
+                role: user.role,
+                name: user.name
+              }
+            }
+          });
+
+          if (!signUpError) {
+            const retry = await supabase.auth.signInWithPassword({
+              email,
+              password
+            });
+            if (!retry.error) {
+              error = null;
+            } else {
+              error = retry.error;
+            }
+          }
+        }
+
+        if (error) {
+          setErrorMsg(`Authentication service error: ${error.message}`);
+          setIsLoggingIn(false);
+          return;
+        }
+      }
+
+      // Success login!
+      addAuditLog(user.name, `Admin login successful`);
+      onLoginSuccess(user);
+    } catch (err: any) {
+      console.error("Login submission error:", err);
+      setErrorMsg("An unexpected error occurred. Please try again.");
+    } finally {
+      setIsLoggingIn(false);
     }
-
-    if (user.password !== password) {
-      setErrorMsg("Invalid security password. Please check your credentials.");
-      return;
-    }
-
-    if (!user.isActive) {
-      setErrorMsg("This S.I. account is currently deactivated. Please contact the administrator.");
-      return;
-    }
-
-    // Success login!
-    addAuditLog(user.name, `${user.role === UserRole.ADMIN ? 'Admin' : 'S.I.'} login successful`);
-    onLoginSuccess(user);
   };
 
-  const triggerQuickLogin = (userStr: "admin" | "ramesh" | "sonal") => {
+  const triggerQuickLogin = async () => {
+    setErrorMsg("");
+    setIsLoggingIn(true);
     const allUsers = getUsers();
-    let targetUser: User | undefined;
-
-    if (userStr === "admin") {
-      targetUser = allUsers.find(u => u.username === "admin");
-    } else if (userStr === "ramesh") {
-      targetUser = allUsers.find(u => u.username === "ramesh_si");
-    } else {
-      targetUser = allUsers.find(u => u.username === "sonal_si");
-    }
+    const targetUser = allUsers.find(u => u.username === "admin");
 
     if (targetUser) {
-      setUsername(targetUser.username);
-      setPassword(targetUser.password || "");
-      addAuditLog(targetUser.name, `${targetUser.role === UserRole.ADMIN ? 'Admin' : 'S.I.'} quick login triggered`);
+      const uNameNormalized = targetUser.username.toLowerCase();
+      const pwd = targetUser.password || "";
+
+      if (isSupabaseConfigured) {
+        const email = `${uNameNormalized}@itiporbandar.gov.in`;
+        let { error } = await supabase.auth.signInWithPassword({
+          email,
+          password: pwd
+        });
+
+        if (error) {
+          const { error: signUpError } = await supabase.auth.signUp({
+            email,
+            password: pwd,
+            options: {
+              data: {
+                username: targetUser.username,
+                role: targetUser.role,
+                name: targetUser.name
+              }
+            }
+          });
+
+          if (!signUpError) {
+            const retry = await supabase.auth.signInWithPassword({
+              email,
+              password: pwd
+            });
+            if (!retry.error) {
+              error = null;
+            } else {
+              error = retry.error;
+            }
+          }
+        }
+
+        if (error) {
+          setErrorMsg(`Quick login auth error: ${error.message}`);
+          setIsLoggingIn(false);
+          return;
+        }
+      }
+
+      addAuditLog(targetUser.name, `Admin quick login triggered`);
       onLoginSuccess(targetUser);
+      setIsLoggingIn(false);
     }
   };
 
@@ -167,9 +266,17 @@ export default function Login({ onLoginSuccess }: LoginProps) {
               {/* Submit Button */}
               <button
                 type="submit"
-                className="w-full py-3 bg-[#2563EB] hover:bg-[#1D4ED8] text-white rounded-[12px] text-xs font-bold tracking-wider uppercase transition-all duration-200 shadow-[0_4px_12px_rgba(37,99,236,0.2)] hover:shadow-[0_6px_20px_rgba(37,99,236,0.35)] focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:ring-offset-2 cursor-pointer text-center"
+                disabled={isLoggingIn}
+                className="w-full py-3 bg-[#2563EB] hover:bg-[#1D4ED8] text-white rounded-[12px] text-xs font-bold tracking-wider uppercase transition-all duration-200 shadow-[0_4px_12px_rgba(37,99,236,0.2)] hover:shadow-[0_6px_20px_rgba(37,99,236,0.35)] focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:ring-offset-2 cursor-pointer text-center flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Sign In to Portal
+                {isLoggingIn ? (
+                  <>
+                    <span className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white"></span>
+                    <span>Signing In...</span>
+                  </>
+                ) : (
+                  <span>Sign In to Portal</span>
+                )}
               </button>
             </form>
           </div>
@@ -177,34 +284,20 @@ export default function Login({ onLoginSuccess }: LoginProps) {
           {/* Quick Demo Login Panel */}
           <div className="bg-[#F8FAFC] border-t border-[#E5E7EB] p-6 space-y-4">
             <div className="flex items-center gap-2 text-xs font-bold text-[#4B5563] uppercase tracking-wider">
-              <AlertCircle size={15} className="text-[#F59E0B]" />
-              Quick Testing Roles
+              <AlertCircle size={15} className="text-[#2563EB]" />
+              Quick Testing Authentication
             </div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1">
               <button
                 type="button"
-                onClick={() => triggerQuickLogin("admin")}
-                className="py-2 px-1 bg-white hover:bg-[#F1F5F9] border border-[#E5E7EB] text-[10px] font-extrabold rounded-[8px] text-[#0F172A] hover:text-[#2563EB] hover:border-[#2563EB] shadow-sm cursor-pointer transition-all"
+                onClick={() => triggerQuickLogin()}
+                className="py-2.5 px-4 bg-[#2563EB]/10 border border-[#2563EB]/20 hover:border-[#2563EB]/40 hover:bg-[#2563EB]/15 text-[#2563EB] text-xs font-bold rounded-[8px] text-center shadow-xs cursor-pointer transition-all flex items-center justify-center gap-2"
               >
-                ADMIN
-              </button>
-              <button
-                type="button"
-                onClick={() => triggerQuickLogin("ramesh")}
-                className="py-2 px-1 bg-white hover:bg-[#F1F5F9] border border-[#E5E7EB] text-[10px] font-extrabold rounded-[8px] text-[#0F172A] hover:text-[#2563EB] hover:border-[#2563EB] shadow-sm cursor-pointer transition-all"
-              >
-                SI RAMESH
-              </button>
-              <button
-                type="button"
-                onClick={() => triggerQuickLogin("sonal")}
-                className="py-2 px-1 bg-white hover:bg-[#F1F5F9] border border-[#E5E7EB] text-[10px] font-extrabold rounded-[8px] text-[#0F172A] hover:text-[#2563EB] hover:border-[#2563EB] shadow-sm cursor-pointer transition-all"
-              >
-                SI SONAL
+                <KeyRound size={13} /> Click to Instant Login as Administrator (admin)
               </button>
             </div>
-            <p className="text-[10px] text-[#6B7280] text-center leading-normal">
-              Click any button to auto-fill credentials and sign in instantly.
+            <p className="text-[10px] text-[#6B7280] text-center leading-normal font-medium">
+              Click the button above to auto-authenticate using the master admin account instantly.
             </p>
           </div>
 

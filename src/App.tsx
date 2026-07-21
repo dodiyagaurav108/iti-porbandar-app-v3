@@ -5,8 +5,8 @@
 
 import { useState, useEffect } from "react";
 import { User } from "./types";
-import { initializeStorage, addAuditLog, syncFromSupabase } from "./utils/storage";
-import { verifyConnection, isSupabaseConfigured } from "./utils/supabaseClient";
+import { initializeStorage, addAuditLog, syncFromSupabase, getUsers } from "./utils/storage";
+import { verifyConnection, isSupabaseConfigured, supabase } from "./utils/supabaseClient";
 import Login from "./components/Login";
 import AdminDashboard from "./components/AdminDashboard";
 import SupervisorDashboard from "./components/SupervisorDashboard";
@@ -43,13 +43,42 @@ export default function App() {
         setSupabaseConnected(false);
       }
 
-      // 2. Check if user is already logged in (persistence)
-      const storedUser = sessionStorage.getItem("iti_current_user");
-      if (storedUser) {
+      // 2. Check Supabase Auth Session (persistence)
+      if (isSupabaseConfigured) {
         try {
-          setCurrentUser(JSON.parse(storedUser));
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session && session.user) {
+            const email = session.user.email;
+            if (email) {
+              const username = email.split("@")[0];
+              const allUsers = getUsers();
+              const found = allUsers.find(u => u.username.toLowerCase() === username.toLowerCase());
+              if (found && found.isActive) {
+                setCurrentUser(found);
+                sessionStorage.setItem("iti_current_user", JSON.stringify(found));
+              }
+            }
+          } else {
+            const storedUser = sessionStorage.getItem("iti_current_user");
+            if (storedUser) {
+              try {
+                setCurrentUser(JSON.parse(storedUser));
+              } catch (e) {
+                sessionStorage.removeItem("iti_current_user");
+              }
+            }
+          }
         } catch (e) {
-          sessionStorage.removeItem("iti_current_user");
+          console.error("Auth session query failed:", e);
+        }
+      } else {
+        const storedUser = sessionStorage.getItem("iti_current_user");
+        if (storedUser) {
+          try {
+            setCurrentUser(JSON.parse(storedUser));
+          } catch (e) {
+            sessionStorage.removeItem("iti_current_user");
+          }
         }
       }
       setLoading(false);
@@ -86,9 +115,16 @@ export default function App() {
     sessionStorage.setItem("iti_current_user", JSON.stringify(user));
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     if (currentUser) {
       addAuditLog(currentUser.name, "User logged out");
+    }
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.auth.signOut();
+      } catch (e) {
+        console.error("Supabase signOut error:", e);
+      }
     }
     setCurrentUser(null);
     sessionStorage.removeItem("iti_current_user");

@@ -21,6 +21,7 @@ export interface Trade {
   isActive?: boolean;
   tradeNameEnglish?: string;
   tradeNameGujarati?: string;
+  seatCapacity?: number;
 }
 
 export enum BatchStatus {
@@ -45,6 +46,7 @@ export interface Batch {
   createdAt: string;
   assignedSIId?: string | null; // Admin-controlled currently assigned S.I. User.id
   assignedSIName?: string | null; // S.I. Name
+  capacity?: number;
 }
 
 export interface BatchAssignmentHistory {

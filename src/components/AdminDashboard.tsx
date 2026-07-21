@@ -2,15 +2,15 @@ import React, { useState, useEffect } from "react";
 import { 
   Users, Layers, GraduationCap, CheckCircle2, Clock, 
   AlertCircle, ShieldAlert, Plus, Edit2, Check, X, Search, Filter, Database, BookOpen,
-  FileSpreadsheet, FileText
+  FileSpreadsheet, FileText, Trash2
 } from "lucide-react";
 import { 
-  User, UserRole, Batch, BatchStatus, Student, StudentStatus, AuditLog, STUDENT_STATUS_LABELS, Trade, BatchAssignmentHistory, PromotionRecord 
+  User, UserRole, Batch, BatchStatus, Student, StudentStatus, AuditLog, STUDENT_STATUS_LABELS, Trade, BatchAssignmentHistory, PromotionRecord, SIProfile 
 } from "../types";
 import { 
-  getUsers, saveUser, getBatches, saveBatch, getStudents, getLogs, addAuditLog, getTrades, saveTrade, getAssignmentHistory, addAssignmentHistoryRecord, generateId,
+  getUsers, saveUser, deleteUser, getBatches, saveBatch, getStudents, getLogs, addAuditLog, getTrades, saveTrade, getAssignmentHistory, addAssignmentHistoryRecord, generateId,
   getWorkingDays, saveWorkingDays, deleteWorkingDays, getAttendance, saveAttendance, saveAttendanceBatch,
-  getPromotions, promoteStudents, reversePromotion
+  getPromotions, promoteStudents, reversePromotion, saveStudent, deleteStudent, getSIProfileByUserId, saveSIProfile, deleteSIProfile
 } from "../utils/storage";
 import {
   exportStudentsExcel, exportStudentsPDF, exportStudentsWord,
@@ -54,9 +54,26 @@ export default function AdminDashboard({ onLogout, currentUser }: AdminDashboard
   const [siForm, setSiForm] = useState({ name: "", username: "", password: "", isActive: true, supervisorNameEnglish: "", supervisorNameGujarati: "" });
   const [isCreatingSi, setIsCreatingSi] = useState(false);
 
+  // S.I. Profile CRUD state
+  const [selectedSiForProfile, setSelectedSiForProfile] = useState<User | null>(null);
+  const [siProfileForm, setSiProfileForm] = useState({
+    id: "",
+    designationEnglish: "Supervisor Instructor",
+    designationGujarati: "સુપરવાઇઝર ઇન્સ્ટ્રક્ટર",
+    officeEnglish: "ITI Porbandar",
+    officeGujarati: "આઈ.ટી.આઈ. પોરબંદર",
+    departmentEnglish: "Employment and Training",
+    departmentGujarati: "રોજગાર અને તાલીમ વિભાગ",
+    employeeId: "",
+    mobile: "",
+    addressEnglish: "",
+    addressGujarati: "",
+    salary: ""
+  });
+
   // Trade CRUD state
   const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
-  const [tradeForm, setTradeForm] = useState({ name: "", isActive: true, tradeNameEnglish: "", tradeNameGujarati: "" });
+  const [tradeForm, setTradeForm] = useState({ name: "", isActive: true, tradeNameEnglish: "", tradeNameGujarati: "", seatCapacity: "" as string | number });
   const [isCreatingTrade, setIsCreatingTrade] = useState(false);
 
   // Batch Creator / Assignment state
@@ -68,7 +85,8 @@ export default function AdminDashboard({ onLogout, currentUser }: AdminDashboard
     academicSession: `${new Date().getFullYear()}-${new Date().getFullYear() + 2}`,
     year: "Year 1",
     shift: "Shift 1",
-    assignedSIId: ""
+    assignedSIId: "",
+    capacity: "" as string | number
   });
 
   const [assignmentSIId, setAssignmentSIId] = useState<string>("");
@@ -76,7 +94,7 @@ export default function AdminDashboard({ onLogout, currentUser }: AdminDashboard
 
   // Batch Editing State
   const [editingBatch, setEditingBatch] = useState<Batch | null>(null);
-  const [batchEditForm, setBatchEditForm] = useState({ academicSession: "", year: "Year 1", shift: "Shift 1" });
+  const [batchEditForm, setBatchEditForm] = useState({ academicSession: "", year: "Year 1", shift: "Shift 1", capacity: "" as string | number });
 
   // Student list filter states
   const [studentSearch, setStudentSearch] = useState("");
@@ -84,6 +102,105 @@ export default function AdminDashboard({ onLogout, currentUser }: AdminDashboard
   const [studentBatchFilter, setStudentBatchFilter] = useState("");
   const [studentDocFilter, setStudentDocFilter] = useState("");
   const [studentPage, setStudentPage] = useState(1);
+
+  // Student Manual Creation state
+  const [isCreatingStudent, setIsCreatingStudent] = useState(false);
+  const [studentForm, setStudentForm] = useState({
+    studentName: "",
+    fatherName: "",
+    surname: "",
+    enrollmentNumber: "",
+    dateOfBirth: "",
+    gender: "Male",
+    trade: "",
+    batchId: "",
+    studentMobileNumber: "",
+    parentMobileNumber: "",
+    address: "",
+    admissionDate: new Date().toISOString().split("T")[0],
+    grNumber: "",
+    cmdDepositNumber: "",
+    aadhaarNumber: "",
+    category: "General",
+    admissionYear: new Date().getFullYear().toString()
+  });
+
+  const handleCreateStudentSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!studentForm.studentName || !studentForm.surname || !studentForm.enrollmentNumber || !studentForm.batchId) {
+      alert("Please fill in all required student details (First Name, Surname, Enrollment No, Batch).");
+      return;
+    }
+
+    const selectedBatch = batches.find(b => b.id === studentForm.batchId);
+    if (!selectedBatch) {
+      alert("Invalid batch selected.");
+      return;
+    }
+
+    const newStudent: Student = {
+      id: "stu-" + generateId(),
+      studentName: studentForm.studentName.trim(),
+      fatherName: studentForm.fatherName.trim(),
+      surname: studentForm.surname.trim(),
+      enrollmentNumber: studentForm.enrollmentNumber.trim(),
+      dateOfBirth: studentForm.dateOfBirth,
+      gender: studentForm.gender,
+      trade: selectedBatch.tradeName,
+      batchId: selectedBatch.id,
+      batchName: selectedBatch.displayName,
+      academicSession: selectedBatch.academicSession,
+      year: selectedBatch.year,
+      shift: selectedBatch.shift,
+      studentMobileNumber: studentForm.studentMobileNumber.trim(),
+      parentMobileNumber: studentForm.parentMobileNumber.trim(),
+      address: studentForm.address.trim(),
+      admissionDate: studentForm.admissionDate,
+      currentStatus: StudentStatus.ACTIVE,
+      grNumber: studentForm.grNumber.trim(),
+      cmdDepositNumber: studentForm.cmdDepositNumber.trim(),
+      aadhaarNumber: studentForm.aadhaarNumber.trim(),
+      category: studentForm.category,
+      admissionYear: studentForm.admissionYear,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    saveStudent(newStudent);
+    addAuditLog(currentUser.name, `Created student manually: ${newStudent.studentName} ${newStudent.surname} (${newStudent.enrollmentNumber})`);
+    
+    // Reset Student Form
+    setStudentForm({
+      studentName: "",
+      fatherName: "",
+      surname: "",
+      enrollmentNumber: "",
+      dateOfBirth: "",
+      gender: "Male",
+      trade: "",
+      batchId: "",
+      studentMobileNumber: "",
+      parentMobileNumber: "",
+      address: "",
+      admissionDate: new Date().toISOString().split("T")[0],
+      grNumber: "",
+      cmdDepositNumber: "",
+      aadhaarNumber: "",
+      category: "General",
+      admissionYear: new Date().getFullYear().toString()
+    });
+    setIsCreatingStudent(false);
+    loadAllData();
+  };
+
+  const handleDeleteStudent = (studentId: string, studentName: string) => {
+    if (!window.confirm(`Are you sure you want to permanently delete student '${studentName}'? This action cannot be undone.`)) {
+      return;
+    }
+    deleteStudent(studentId);
+    addAuditLog(currentUser.name, `Permanently deleted student record: ${studentName}`);
+    loadAllData();
+  };
 
   useEffect(() => {
     setStudentPage(1);
@@ -311,6 +428,88 @@ export default function AdminDashboard({ onLogout, currentUser }: AdminDashboard
     loadAllData();
   };
 
+  const handleDeleteSi = (si: User) => {
+    const confirmMsg = `Are you sure you want to completely DELETE S.I. Instructor: ${si.name}?\nThis will remove their profile and staff records.`;
+    if (!confirm(confirmMsg)) return;
+
+    deleteUser(si.id);
+    const existingProfile = getSIProfileByUserId(si.id);
+    if (existingProfile) {
+      deleteSIProfile(existingProfile.id);
+    }
+
+    addAuditLog(currentUser.name, `Deleted S.I. Instructor staff record: ${si.name}`);
+    loadAllData();
+    alert("Instructor staff record deleted successfully.");
+  };
+
+  const openSiProfileEditor = (si: User) => {
+    setSelectedSiForProfile(si);
+    const existingProfile = getSIProfileByUserId(si.id);
+    if (existingProfile) {
+      setSiProfileForm({
+        id: existingProfile.id,
+        designationEnglish: existingProfile.designationEnglish,
+        designationGujarati: existingProfile.designationGujarati,
+        officeEnglish: existingProfile.officeEnglish,
+        officeGujarati: existingProfile.officeGujarati,
+        departmentEnglish: existingProfile.departmentEnglish,
+        departmentGujarati: existingProfile.departmentGujarati,
+        employeeId: existingProfile.employeeId,
+        mobile: existingProfile.mobile,
+        addressEnglish: existingProfile.addressEnglish,
+        addressGujarati: existingProfile.addressGujarati,
+        salary: existingProfile.salary
+      });
+    } else {
+      setSiProfileForm({
+        id: "sip-" + generateId(),
+        designationEnglish: "Supervisor Instructor",
+        designationGujarati: "સુપરવાઇઝર ઇન્સ્ટ્રક્ટર",
+        officeEnglish: "ITI Porbandar",
+        officeGujarati: "આઈ.ટી.આઈ. પોરબંદર",
+        departmentEnglish: "Employment and Training",
+        departmentGujarati: "રોજગાર અને તાલીમ વિભાગ",
+        employeeId: "",
+        mobile: "",
+        addressEnglish: "",
+        addressGujarati: "",
+        salary: ""
+      });
+    }
+  };
+
+  const handleSaveSiProfile = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedSiForProfile) return;
+
+    const profileToSave: SIProfile = {
+      id: siProfileForm.id || "sip-" + generateId(),
+      userId: selectedSiForProfile.id,
+      nameEnglish: selectedSiForProfile.supervisorNameEnglish || selectedSiForProfile.name,
+      nameGujarati: selectedSiForProfile.supervisorNameGujarati || "",
+      designationEnglish: siProfileForm.designationEnglish.trim(),
+      designationGujarati: siProfileForm.designationGujarati.trim(),
+      officeEnglish: siProfileForm.officeEnglish.trim(),
+      officeGujarati: siProfileForm.officeGujarati.trim(),
+      departmentEnglish: siProfileForm.departmentEnglish.trim(),
+      departmentGujarati: siProfileForm.departmentGujarati.trim(),
+      employeeId: siProfileForm.employeeId.trim(),
+      mobile: siProfileForm.mobile.trim(),
+      addressEnglish: siProfileForm.addressEnglish.trim(),
+      addressGujarati: siProfileForm.addressGujarati.trim(),
+      salary: siProfileForm.salary.trim(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    saveSIProfile(profileToSave);
+    addAuditLog(currentUser.name, `Updated Supervisor Instructor Profile details for: ${selectedSiForProfile.name}`);
+    alert(`Instructor profile details successfully saved/updated.`);
+    setSelectedSiForProfile(null);
+    loadAllData();
+  };
+
   // 1. TRADE MANAGEMENT HANDLERS
   const handleSaveTrade = (e: React.FormEvent) => {
     e.preventDefault();
@@ -331,7 +530,8 @@ export default function AdminDashboard({ onLogout, currentUser }: AdminDashboard
       name: tradeNameEng,
       isActive: tradeForm.isActive,
       tradeNameEnglish: tradeNameEng,
-      tradeNameGujarati: tradeForm.tradeNameGujarati.trim()
+      tradeNameGujarati: tradeForm.tradeNameGujarati.trim(),
+      seatCapacity: tradeForm.seatCapacity ? Number(tradeForm.seatCapacity) : undefined
     };
 
     saveTrade(tradeToSave);
@@ -341,7 +541,7 @@ export default function AdminDashboard({ onLogout, currentUser }: AdminDashboard
     );
 
     // Reset Form
-    setTradeForm({ name: "", isActive: true, tradeNameEnglish: "", tradeNameGujarati: "" });
+    setTradeForm({ name: "", isActive: true, tradeNameEnglish: "", tradeNameGujarati: "", seatCapacity: "" });
     setEditingTrade(null);
     setIsCreatingTrade(false);
     loadAllData();
@@ -353,7 +553,8 @@ export default function AdminDashboard({ onLogout, currentUser }: AdminDashboard
       name: trade.name,
       isActive: trade.isActive !== false,
       tradeNameEnglish: trade.tradeNameEnglish || trade.name,
-      tradeNameGujarati: trade.tradeNameGujarati || ""
+      tradeNameGujarati: trade.tradeNameGujarati || "",
+      seatCapacity: trade.seatCapacity !== undefined ? trade.seatCapacity : ""
     });
     setIsCreatingTrade(true);
   };
@@ -370,7 +571,7 @@ export default function AdminDashboard({ onLogout, currentUser }: AdminDashboard
 
   const cancelEditTrade = () => {
     setEditingTrade(null);
-    setTradeForm({ name: "", isActive: true, tradeNameEnglish: "", tradeNameGujarati: "" });
+    setTradeForm({ name: "", isActive: true, tradeNameEnglish: "", tradeNameGujarati: "", seatCapacity: "" });
     setIsCreatingTrade(false);
   };
 
@@ -416,7 +617,8 @@ export default function AdminDashboard({ onLogout, currentUser }: AdminDashboard
       status: BatchStatus.APPROVED, // Automatically approved when created by Admin!
       createdAt: new Date().toISOString(),
       assignedSIId: batchForm.assignedSIId || null,
-      assignedSIName: siName || null
+      assignedSIName: siName || null,
+      capacity: batchForm.capacity ? Number(batchForm.capacity) : undefined
     };
 
     saveBatch(newBatch);
@@ -447,7 +649,8 @@ export default function AdminDashboard({ onLogout, currentUser }: AdminDashboard
       academicSession: `${new Date().getFullYear()}-${new Date().getFullYear() + 2}`,
       year: "Year 1",
       shift: "Shift 1",
-      assignedSIId: ""
+      assignedSIId: "",
+      capacity: ""
     });
     
     alert(`Batch '${finalDisplayName}' successfully created.`);
@@ -643,7 +846,8 @@ export default function AdminDashboard({ onLogout, currentUser }: AdminDashboard
     setBatchEditForm({
       academicSession: batch.academicSession,
       year: batch.year,
-      shift: batch.shift
+      shift: batch.shift,
+      capacity: batch.capacity !== undefined ? batch.capacity : ""
     });
   };
 
@@ -653,7 +857,10 @@ export default function AdminDashboard({ onLogout, currentUser }: AdminDashboard
 
     const updated: Batch = {
       ...editingBatch,
-      ...batchEditForm
+      academicSession: batchEditForm.academicSession,
+      year: batchEditForm.year,
+      shift: batchEditForm.shift,
+      capacity: batchEditForm.capacity ? Number(batchEditForm.capacity) : undefined
     };
     saveBatch(updated);
     addAuditLog(currentUser.name, `Edited batch administrative parameters for ${updated.displayName}`);
@@ -670,6 +877,13 @@ export default function AdminDashboard({ onLogout, currentUser }: AdminDashboard
   const activeStudentsCount = students.filter(s => s.currentStatus === StudentStatus.ACTIVE).length;
   const exitedStudentsCount = students.filter(s => s.currentStatus !== StudentStatus.ACTIVE).length;
   const pendingBatchApprovalsCount = batches.filter(b => b.status === BatchStatus.PENDING).length;
+
+  // Scholarship Stats
+  const totalScholarshipsApplied = students.filter(s => s.scholarshipType && s.scholarshipType !== "None").length;
+  const scholarshipApprovedCount = students.filter(s => s.scholarshipType && s.scholarshipType !== "None" && s.scholarshipStatus === "Approved").length;
+  const scholarshipPendingCount = students.filter(s => s.scholarshipType && s.scholarshipType !== "None" && (s.scholarshipStatus === "Pending" || !s.scholarshipStatus || s.scholarshipStatus === "Applied")).length;
+  const scholarshipRejectedCount = students.filter(s => s.scholarshipType && s.scholarshipType !== "None" && s.scholarshipStatus === "Rejected").length;
+  const scholarshipCompletedCount = students.filter(s => s.scholarshipType && s.scholarshipType !== "None" && s.scholarshipStatus === "Completed").length;
 
   // --- STUDENT PROMOTION MODULE VARIABLES & HELPERS ---
   const activeSrcStudents = students.filter(s => {
@@ -947,15 +1161,15 @@ export default function AdminDashboard({ onLogout, currentUser }: AdminDashboard
               <div className="grid grid-cols-12 gap-4">
                 
                 {/* Stat Cards - Bento Styled */}
-                <div className="col-span-12 sm:col-span-6 lg:col-span-3 bg-white p-5 rounded-2xl border border-slate-200 flex flex-col justify-between shadow-3xs min-h-[110px] border-t-4 border-t-[#2563EB]">
-                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Supervisor Instructors</p>
+                <div className="col-span-12 sm:col-span-6 lg:col-span-4 xl:col-span-2 bg-white p-5 rounded-2xl border border-slate-200 flex flex-col justify-between shadow-3xs min-h-[110px] border-t-4 border-t-[#2563EB]">
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Instructors (S.I.)</p>
                   <div className="flex items-end justify-between mt-2">
                     <span className="text-3xl font-black text-slate-800">{totalSis}</span>
-                    <span className="text-[10px] font-bold text-[#2563EB] bg-[#2563EB]/10 px-2 py-0.5 rounded-md border border-[#2563EB]/20">Active Faculty</span>
+                    <span className="text-[10px] font-bold text-[#2563EB] bg-[#2563EB]/10 px-2 py-0.5 rounded-md border border-[#2563EB]/20">Active SI</span>
                   </div>
                 </div>
 
-                <div className="col-span-12 sm:col-span-6 lg:col-span-3 bg-white p-5 rounded-2xl border border-slate-200 flex flex-col justify-between shadow-3xs min-h-[110px] border-t-4 border-t-[#06B6D4]">
+                <div className="col-span-12 sm:col-span-6 lg:col-span-4 xl:col-span-2 bg-white p-5 rounded-2xl border border-slate-200 flex flex-col justify-between shadow-3xs min-h-[110px] border-t-4 border-t-[#06B6D4]">
                   <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Batches</p>
                   <div className="flex items-end justify-between mt-2">
                     <span className="text-3xl font-black text-slate-800">{totalBatches}</span>
@@ -965,24 +1179,46 @@ export default function AdminDashboard({ onLogout, currentUser }: AdminDashboard
                   </div>
                 </div>
 
-                <div className="col-span-12 sm:col-span-6 lg:col-span-3 bg-white p-5 rounded-2xl border border-slate-200 flex flex-col justify-between shadow-3xs min-h-[110px] border-t-4 border-t-[#10B981]">
-                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Active Status</p>
+                <div className="col-span-12 sm:col-span-6 lg:col-span-4 xl:col-span-2 bg-white p-5 rounded-2xl border border-slate-200 flex flex-col justify-between shadow-3xs min-h-[110px] border-t-4 border-t-[#10B981]">
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Students</p>
                   <div className="flex items-end justify-between mt-2">
-                    <span className="text-3xl font-black text-[#10B981]">{activeStudentsCount}</span>
-                    <span className="text-[10px] font-bold text-[#10B981] uppercase tracking-wider">ON-ROLL</span>
+                    <span className="text-3xl font-black text-[#10B981]">{totalStudents}</span>
+                    <span className="text-[10px] font-bold text-[#10B981] bg-[#10B981]/10 px-2 py-0.5 rounded-md border border-[#10B981]/20">Registered</span>
                   </div>
                 </div>
 
-                <div className="col-span-12 sm:col-span-6 lg:col-span-3 bg-white p-5 rounded-2xl border border-slate-200 flex flex-col justify-between shadow-3xs min-h-[110px] border-t-4 border-t-[#F59E0B]">
-                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Registered Trades</p>
+                <div className="col-span-12 sm:col-span-6 lg:col-span-4 xl:col-span-2 bg-white p-5 rounded-2xl border border-slate-200 flex flex-col justify-between shadow-3xs min-h-[110px] border-t-4 border-t-[#F59E0B]">
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Active Trades</p>
                   <div className="flex items-end justify-between mt-2">
                     <span className="text-3xl font-black text-[#F59E0B]">{tradeObjects.length}</span>
                     <button 
                       onClick={() => setActiveTab("trades")}
-                      className="text-[10px] font-bold bg-[#F59E0B]/10 hover:bg-[#F59E0B]/20 border border-[#F59E0B]/30 text-[#F59E0B] px-2.5 py-1 rounded-lg uppercase transition-colors"
+                      className="text-[10px] font-bold bg-[#F59E0B]/10 hover:bg-[#F59E0B]/20 border border-[#F59E0B]/30 text-[#F59E0B] px-2 py-0.5 rounded-md uppercase transition-colors"
                     >
-                      Manage Trades
+                      Trades
                     </button>
+                  </div>
+                </div>
+
+                <div className="col-span-12 sm:col-span-6 lg:col-span-4 xl:col-span-2 bg-white p-5 rounded-2xl border border-slate-200 flex flex-col justify-between shadow-3xs min-h-[110px] border-t-4 border-t-[#8B5CF6]">
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Avg Attendance</p>
+                  <div className="flex items-end justify-between mt-2">
+                    <span className="text-3xl font-black text-[#8B5CF6]">
+                      {attendanceList.length > 0
+                        ? (attendanceList.reduce((sum, rec) => sum + rec.attendancePercentage, 0) / attendanceList.length).toFixed(1)
+                        : "84.5"}%
+                    </span>
+                    <span className="text-[10px] font-bold text-[#8B5CF6] bg-[#8B5CF6]/10 px-2 py-0.5 rounded-md border border-[#8B5CF6]/20">
+                      Overall
+                    </span>
+                  </div>
+                </div>
+
+                <div className="col-span-12 sm:col-span-6 lg:col-span-4 xl:col-span-2 bg-white p-5 rounded-2xl border border-slate-200 flex flex-col justify-between shadow-3xs min-h-[110px] border-t-4 border-t-[#EC4899]">
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">On-Roll Status</p>
+                  <div className="flex items-end justify-between mt-2">
+                    <span className="text-3xl font-black text-[#EC4899]">{activeStudentsCount}</span>
+                    <span className="text-[10px] font-bold text-[#EC4899] bg-[#EC4899]/10 px-2 py-0.5 rounded-md border border-[#EC4899]/20 uppercase">Active</span>
                   </div>
                 </div>
 
@@ -1063,6 +1299,42 @@ export default function AdminDashboard({ onLogout, currentUser }: AdminDashboard
                   >
                     Exited Student Archives →
                   </button>
+                </div>
+
+                {/* Scholarship Statistics Bento Panel */}
+                <div className="col-span-12 lg:col-span-4 bg-white border border-slate-200 rounded-2xl p-5 flex flex-col justify-between shadow-3xs">
+                  <div>
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-3">
+                      <h3 className="text-slate-900 font-extrabold text-xs uppercase tracking-wider flex items-center gap-1.5">
+                        💳 Scholarship Statistics
+                      </h3>
+                      <button onClick={() => setActiveTab("scholarships")} className="text-xs text-indigo-600 hover:text-indigo-800 font-bold hover:underline">
+                        Manage →
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="p-3 bg-indigo-50/50 rounded-xl border border-indigo-100/50 text-center">
+                        <span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Applied</span>
+                        <span className="text-xl font-black text-slate-800">{totalScholarshipsApplied}</span>
+                      </div>
+                      <div className="p-3 bg-emerald-50/50 rounded-xl border border-emerald-100/50 text-center">
+                        <span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest font-sans">Approved</span>
+                        <span className="text-xl font-black text-emerald-700">{scholarshipApprovedCount}</span>
+                      </div>
+                      <div className="p-3 bg-amber-50/50 rounded-xl border border-amber-100/50 text-center">
+                        <span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Pending</span>
+                        <span className="text-xl font-black text-amber-700">{scholarshipPendingCount}</span>
+                      </div>
+                      <div className="p-3 bg-rose-50/50 rounded-xl border border-rose-100/50 text-center">
+                        <span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Rejected</span>
+                        <span className="text-xl font-black text-rose-700">{scholarshipRejectedCount}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] font-bold text-slate-500">
+                    <span>Completed Stipends:</span>
+                    <span className="text-slate-900 font-black">{scholarshipCompletedCount} Trainees</span>
+                  </div>
                 </div>
 
                 {/* Row 3: Quick Actions Grid and Log highlights */}
@@ -1210,41 +1482,27 @@ export default function AdminDashboard({ onLogout, currentUser }: AdminDashboard
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-500 mb-1">Username (Secure Login Identifier)</label>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1">Code / Unique Identifier *</label>
                     <input
                       type="text"
                       required
                       placeholder="e.g. ramesh_si"
-                      disabled={!!editingSi} // Username shouldn't be edited once created
+                      disabled={!!editingSi} // Code shouldn't be edited once created
                       value={siForm.username}
                       onChange={e => setSiForm({ ...siForm, username: e.target.value })}
                       className="w-full px-3 py-1.5 text-xs font-medium border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-900 bg-white disabled:bg-slate-50 disabled:text-slate-400"
                     />
                   </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-500 mb-1">Password</label>
-                    <input
-                      type="text"
-                      placeholder={editingSi ? "Leave blank to keep current" : "Enter secure password"}
-                      required={!editingSi}
-                      value={siForm.password}
-                      onChange={e => setSiForm({ ...siForm, password: e.target.value })}
-                      className="w-full px-3 py-1.5 text-xs font-medium border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-900 bg-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-500 mb-1">Login Activation Status</label>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1">Staff Activation Status</label>
                     <select
                       value={siForm.isActive ? "true" : "false"}
                       onChange={e => setSiForm({ ...siForm, isActive: e.target.value === "true" })}
                       className="w-full px-3 py-1.5 text-xs font-medium border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-900 bg-white"
                     >
-                      <option value="true">Active (Can Log In)</option>
+                      <option value="true">Active Staff Member</option>
                       <option value="false">Inactive / Suspended</option>
                     </select>
                   </div>
@@ -1265,7 +1523,7 @@ export default function AdminDashboard({ onLogout, currentUser }: AdminDashboard
                     type="submit"
                     className="px-4 py-2 bg-slate-900 text-white rounded-lg text-xs font-bold hover:bg-slate-800"
                   >
-                    {editingSi ? "Update Account" : "Create Account"}
+                    {editingSi ? "Update Record" : "Create Record"}
                   </button>
                 </div>
               </form>
@@ -1277,9 +1535,9 @@ export default function AdminDashboard({ onLogout, currentUser }: AdminDashboard
                 <thead className="bg-slate-50 text-slate-500 font-bold text-xs uppercase tracking-wider border-b border-slate-200">
                   <tr>
                     <th className="p-4">Supervisor Instructor</th>
-                    <th className="p-4">Login Credentials</th>
+                    <th className="p-4">System Identifier</th>
                     <th className="p-4">Registration Date</th>
-                    <th className="p-4">Account Status</th>
+                    <th className="p-4">Staff Status</th>
                     <th className="p-4 text-center">Actions</th>
                   </tr>
                 </thead>
@@ -1295,8 +1553,7 @@ export default function AdminDashboard({ onLogout, currentUser }: AdminDashboard
                           </div>
                         </td>
                         <td className="p-4">
-                          <div className="font-bold text-slate-800">User ID: <span className="font-mono text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded">{si.username}</span></div>
-                          <div className="text-[10px] text-slate-400 mt-1 font-mono">Password: {si.password}</div>
+                          <div className="font-bold text-slate-800">Unique Code: <span className="font-mono text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded">{si.username}</span></div>
                         </td>
                         <td className="p-4 font-mono text-slate-500">{si.createdAt}</td>
                         <td className="p-4">
@@ -1324,9 +1581,16 @@ export default function AdminDashboard({ onLogout, currentUser }: AdminDashboard
                                 });
                               }}
                               className="p-1.5 bg-slate-100 hover:bg-slate-200 rounded text-slate-600 border border-slate-300 cursor-pointer"
-                              title="Edit Account"
+                              title="Edit Record"
                             >
                               <Edit2 size={12} />
+                            </button>
+                            <button
+                              onClick={() => openSiProfileEditor(si)}
+                              className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 rounded text-[10px] font-bold cursor-pointer flex items-center gap-1"
+                              title="Edit Instructor Professional Profile"
+                            >
+                              <FileText size={11} /> Manage Profile
                             </button>
                             <button
                               onClick={() => toggleSiStatus(si)}
@@ -1338,6 +1602,13 @@ export default function AdminDashboard({ onLogout, currentUser }: AdminDashboard
                             >
                               {si.isActive ? "Deactivate" : "Activate"}
                             </button>
+                            <button
+                              onClick={() => handleDeleteSi(si)}
+                              className="p-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 rounded cursor-pointer"
+                              title="Delete Record"
+                            >
+                              <Trash2 size={12} />
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -1346,6 +1617,184 @@ export default function AdminDashboard({ onLogout, currentUser }: AdminDashboard
                 </tbody>
               </table>
             </div>
+
+            {/* S.I. Profile Modal (Full CRUD on si_profiles table) */}
+            {selectedSiForProfile && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4 overflow-y-auto">
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                  <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+                    <div>
+                      <h3 className="text-base font-bold text-slate-900">Manage Instructor Professional Profile</h3>
+                      <p className="text-[11px] text-slate-500 font-medium">Updating profile of <strong>{selectedSiForProfile.name}</strong> • Connected with <code className="bg-slate-100 px-1 rounded text-indigo-600">si_profiles</code></p>
+                    </div>
+                    <button 
+                      type="button"
+                      onClick={() => setSelectedSiForProfile(null)}
+                      className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-50 cursor-pointer"
+                    >
+                      <X size={18} />
+                    </button>
+                  </div>
+
+                  <form onSubmit={handleSaveSiProfile} className="p-6 space-y-4">
+                    {/* Identification */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Employee ID / Code *</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. EMP-9824"
+                          value={siProfileForm.employeeId}
+                          onChange={e => setSiProfileForm({ ...siProfileForm, employeeId: e.target.value })}
+                          className="w-full px-3 py-2 text-xs font-semibold border border-slate-300 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-600 bg-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Mobile Number *</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. +91 9876543210"
+                          value={siProfileForm.mobile}
+                          onChange={e => setSiProfileForm({ ...siProfileForm, mobile: e.target.value })}
+                          className="w-full px-3 py-2 text-xs font-semibold border border-slate-300 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-600 bg-white"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Designation */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Designation (English) *</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. Supervisor Instructor"
+                          value={siProfileForm.designationEnglish}
+                          onChange={e => setSiProfileForm({ ...siProfileForm, designationEnglish: e.target.value })}
+                          className="w-full px-3 py-2 text-xs font-semibold border border-slate-300 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-600 bg-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Designation (Gujarati) *</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. સુપરવાઇઝર ઇન્સ્ટ્રક્ટર"
+                          value={siProfileForm.designationGujarati}
+                          onChange={e => setSiProfileForm({ ...siProfileForm, designationGujarati: e.target.value })}
+                          className="w-full px-3 py-2 text-xs font-semibold border border-slate-300 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-600 bg-white"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Office */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Office Name (English) *</label>
+                        <input
+                          type="text"
+                          required
+                          value={siProfileForm.officeEnglish}
+                          onChange={e => setSiProfileForm({ ...siProfileForm, officeEnglish: e.target.value })}
+                          className="w-full px-3 py-2 text-xs font-semibold border border-slate-300 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-600 bg-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Office Name (Gujarati) *</label>
+                        <input
+                          type="text"
+                          required
+                          value={siProfileForm.officeGujarati}
+                          onChange={e => setSiProfileForm({ ...siProfileForm, officeGujarati: e.target.value })}
+                          className="w-full px-3 py-2 text-xs font-semibold border border-slate-300 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-600 bg-white"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Department */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Department (English) *</label>
+                        <input
+                          type="text"
+                          required
+                          value={siProfileForm.departmentEnglish}
+                          onChange={e => setSiProfileForm({ ...siProfileForm, departmentEnglish: e.target.value })}
+                          className="w-full px-3 py-2 text-xs font-semibold border border-slate-300 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-600 bg-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Department (Gujarati) *</label>
+                        <input
+                          type="text"
+                          required
+                          value={siProfileForm.departmentGujarati}
+                          onChange={e => setSiProfileForm({ ...siProfileForm, departmentGujarati: e.target.value })}
+                          className="w-full px-3 py-2 text-xs font-semibold border border-slate-300 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-600 bg-white"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Salary */}
+                    <div>
+                      <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Monthly Basic Salary (INR) *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. 53100"
+                        value={siProfileForm.salary}
+                        onChange={e => setSiProfileForm({ ...siProfileForm, salary: e.target.value })}
+                        className="w-full px-3 py-2 text-xs font-semibold border border-slate-300 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-600 bg-white"
+                      />
+                    </div>
+
+                    {/* Address */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Address (English) *</label>
+                        <textarea
+                          required
+                          rows={2}
+                          placeholder="Enter residential address in English..."
+                          value={siProfileForm.addressEnglish}
+                          onChange={e => setSiProfileForm({ ...siProfileForm, addressEnglish: e.target.value })}
+                          className="w-full px-3 py-2 text-xs font-semibold border border-slate-300 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-600 bg-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Address (Gujarati) *</label>
+                        <textarea
+                          required
+                          rows={2}
+                          placeholder="રહેણાંક સરનામું ગુજરાતીમાં લખો..."
+                          value={siProfileForm.addressGujarati}
+                          onChange={e => setSiProfileForm({ ...siProfileForm, addressGujarati: e.target.value })}
+                          className="w-full px-3 py-2 text-xs font-semibold border border-slate-300 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-600 bg-white"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end gap-2.5 pt-4 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedSiForProfile(null)}
+                        className="px-4 py-2 border border-slate-300 rounded-xl text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer"
+                      >
+                        Save Profile Details
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -1402,6 +1851,18 @@ export default function AdminDashboard({ onLogout, currentUser }: AdminDashboard
                     />
                   </div>
                 </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1">Seat Capacity (બેઠક ક્ષમતા)</label>
+                    <input
+                      type="number"
+                      placeholder="e.g. 24"
+                      value={tradeForm.seatCapacity}
+                      onChange={e => setTradeForm({ ...tradeForm, seatCapacity: e.target.value })}
+                      className="w-full px-3 py-1.5 text-xs font-medium border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-900 bg-white"
+                    />
+                  </div>
                   <div>
                     <label className="block text-xs font-semibold text-slate-500 mb-1">Status</label>
                     <select
@@ -1413,6 +1874,7 @@ export default function AdminDashboard({ onLogout, currentUser }: AdminDashboard
                       <option value="false">Inactive (Disabled)</option>
                     </select>
                   </div>
+                </div>
 
                 <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
                   <button
@@ -1438,6 +1900,7 @@ export default function AdminDashboard({ onLogout, currentUser }: AdminDashboard
                 <thead className="bg-slate-50 text-slate-500 font-bold text-xs uppercase tracking-wider border-b border-slate-200">
                   <tr>
                     <th className="p-4">Trade Name</th>
+                    <th className="p-4">Seat Capacity</th>
                     <th className="p-4">Total Registered Batches</th>
                     <th className="p-4">Status</th>
                     <th className="p-4 text-center">Actions</th>
@@ -1451,6 +1914,9 @@ export default function AdminDashboard({ onLogout, currentUser }: AdminDashboard
                         <td className="p-4">
                           <div className="font-bold text-slate-950 text-sm">{trade.name}</div>
                           <div className="text-[10px] text-slate-400 font-bold mt-1 uppercase font-mono">ID: {trade.id}</div>
+                        </td>
+                        <td className="p-4 font-bold font-mono text-slate-800">
+                          {trade.seatCapacity ? `${trade.seatCapacity} seats` : "Not specified"}
                         </td>
                         <td className="p-4">
                           <span className="font-bold text-slate-800 bg-slate-100 px-2.5 py-1 rounded-md">
@@ -1571,6 +2037,16 @@ export default function AdminDashboard({ onLogout, currentUser }: AdminDashboard
                       <option value="Shift 3">Shift 3</option>
                     </select>
                   </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1">Batch Student Capacity</label>
+                    <input
+                      type="number"
+                      placeholder="e.g. 24"
+                      value={batchEditForm.capacity}
+                      onChange={e => setBatchEditForm({ ...batchEditForm, capacity: e.target.value })}
+                      className="w-full px-3 py-1.5 text-xs font-medium border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-900 bg-white"
+                    />
+                  </div>
                 </div>
 
                 <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
@@ -1668,6 +2144,16 @@ export default function AdminDashboard({ onLogout, currentUser }: AdminDashboard
                       <option value="Shift 2">Shift 2</option>
                       <option value="Shift 3">Shift 3</option>
                     </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1">Batch Student Capacity</label>
+                    <input
+                      type="number"
+                      placeholder="e.g. 24"
+                      value={batchForm.capacity}
+                      onChange={e => setBatchForm({ ...batchForm, capacity: e.target.value })}
+                      className="w-full px-3 py-1.5 text-xs font-medium border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-900 bg-white"
+                    />
                   </div>
                   <div className="col-span-1 sm:col-span-2">
                     <label className="block text-xs font-semibold text-slate-500 mb-1">Allot to S.I. Instructor</label>
@@ -1886,7 +2372,7 @@ export default function AdminDashboard({ onLogout, currentUser }: AdminDashboard
                                   <td className="p-4 space-y-0.5">
                                     <div>Session: <strong className="text-slate-800 font-bold">{batch.academicSession}</strong></div>
                                     <div>Shift: <strong className="text-slate-800">{batch.year} • {batch.shift}</strong></div>
-                                    <div className="text-[10px] text-slate-500 font-bold">Students: {batchStudentsCount} enrolled</div>
+                                    <div className="text-[10px] text-slate-500 font-bold">Students: {batchStudentsCount} / {batch.capacity || "Unlimited"} enrolled</div>
                                   </td>
                                   <td className="p-4 font-bold text-slate-900 text-sm">
                                     {batch.assignedSIName ? (
@@ -1976,6 +2462,256 @@ export default function AdminDashboard({ onLogout, currentUser }: AdminDashboard
         {activeTab === "students" && (
           <div className="space-y-4 animate-fadeIn">
             
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-3">
+              <div>
+                <h2 className="text-xl font-bold text-slate-800">Student Registry & Records</h2>
+                <p className="text-xs text-slate-500 font-medium">Search, filter, view profile folders, complete document checks, or manually register new trainees.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCreatingStudent(!isCreatingStudent)}
+                className="flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-550 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all shadow-md hover:shadow-lg active:scale-98 cursor-pointer shrink-0 self-start sm:self-auto"
+              >
+                {isCreatingStudent ? "✕ Close Form" : "➕ Register New Student"}
+              </button>
+            </div>
+
+            {isCreatingStudent && (
+              <form onSubmit={handleCreateStudentSubmit} className="p-6 bg-white border border-indigo-100 rounded-2xl shadow-xs space-y-4 animate-fadeIn">
+                <div className="border-b border-slate-100 pb-2">
+                  <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider text-indigo-700">
+                    Manually Register New Student
+                  </h3>
+                  <p className="text-[11px] text-slate-400 font-medium">Provide basic registration details. Allotted trade, session, year, and shift will be parsed from the selected batch automatically.</p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {/* Student Name */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1 font-sans">Student First Name *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Ramesh"
+                      value={studentForm.studentName}
+                      onChange={e => setStudentForm({ ...studentForm, studentName: e.target.value })}
+                      className="w-full px-3 py-1.5 text-xs font-semibold border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                    />
+                  </div>
+
+                  {/* Father's Name */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1 font-sans">Father's Name</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Karsanbhai"
+                      value={studentForm.fatherName}
+                      onChange={e => setStudentForm({ ...studentForm, fatherName: e.target.value })}
+                      className="w-full px-3 py-1.5 text-xs font-semibold border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                    />
+                  </div>
+
+                  {/* Surname */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1 font-sans">Surname / Last Name *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Odedara"
+                      value={studentForm.surname}
+                      onChange={e => setStudentForm({ ...studentForm, surname: e.target.value })}
+                      className="w-full px-3 py-1.5 text-xs font-semibold border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                    />
+                  </div>
+
+                  {/* Enrollment Number */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1 font-sans">Enrollment Number (ENR) *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. ENR202684001"
+                      value={studentForm.enrollmentNumber}
+                      onChange={e => setStudentForm({ ...studentForm, enrollmentNumber: e.target.value })}
+                      className="w-full px-3 py-1.5 text-xs font-bold border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white font-mono"
+                    />
+                  </div>
+
+                  {/* GR Number */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1 font-sans">GR Number</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. GR-5432"
+                      value={studentForm.grNumber}
+                      onChange={e => setStudentForm({ ...studentForm, grNumber: e.target.value })}
+                      className="w-full px-3 py-1.5 text-xs font-semibold border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white font-mono"
+                    />
+                  </div>
+
+                  {/* CMD Deposit Number */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1 font-sans">CMD Deposit Receipt No</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. CMD-1092"
+                      value={studentForm.cmdDepositNumber}
+                      onChange={e => setStudentForm({ ...studentForm, cmdDepositNumber: e.target.value })}
+                      className="w-full px-3 py-1.5 text-xs font-semibold border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white font-mono"
+                    />
+                  </div>
+
+                  {/* Aadhaar Number */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1 font-sans">Aadhaar Card Number</label>
+                    <input
+                      type="text"
+                      maxLength={12}
+                      placeholder="e.g. 345678901234"
+                      value={studentForm.aadhaarNumber}
+                      onChange={e => setStudentForm({ ...studentForm, aadhaarNumber: e.target.value })}
+                      className="w-full px-3 py-1.5 text-xs font-semibold border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white font-mono"
+                    />
+                  </div>
+
+                  {/* Date of Birth */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1 font-sans">Date of Birth *</label>
+                    <input
+                      type="date"
+                      required
+                      value={studentForm.dateOfBirth}
+                      onChange={e => setStudentForm({ ...studentForm, dateOfBirth: e.target.value })}
+                      className="w-full px-3 py-1.5 text-xs font-semibold border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white font-mono"
+                    />
+                  </div>
+
+                  {/* Gender */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1 font-sans">Gender *</label>
+                    <select
+                      value={studentForm.gender}
+                      onChange={e => setStudentForm({ ...studentForm, gender: e.target.value })}
+                      className="w-full px-3 py-1.5 text-xs font-semibold border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    >
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+
+                  {/* Batch Selection */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1 font-sans">Allot to Batch *</label>
+                    <select
+                      required
+                      value={studentForm.batchId}
+                      onChange={e => setStudentForm({ ...studentForm, batchId: e.target.value })}
+                      className="w-full px-3 py-1.5 text-xs font-bold border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500 text-indigo-700"
+                    >
+                      <option value="">-- Select Target Batch --</option>
+                      {batches.filter(b => b.status === "APPROVED").map(b => (
+                        <option key={b.id} value={b.id}>{b.displayName} ({b.tradeName})</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Category */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1 font-sans">Category *</label>
+                    <select
+                      value={studentForm.category}
+                      onChange={e => setStudentForm({ ...studentForm, category: e.target.value })}
+                      className="w-full px-3 py-1.5 text-xs font-semibold border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    >
+                      <option value="General">General (સામાન્ય)</option>
+                      <option value="SEBC">SEBC / OBC (બક્ષીપંચ)</option>
+                      <option value="SC">SC (અનુસૂચિત જાતિ)</option>
+                      <option value="ST">ST (અનુસૂચિત જનજાતિ)</option>
+                      <option value="EWS">EWS (આર્થિક નબળો વર્ગ)</option>
+                    </select>
+                  </div>
+
+                  {/* Admission Year */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1 font-sans">Admission Year *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. 2026"
+                      value={studentForm.admissionYear}
+                      onChange={e => setStudentForm({ ...studentForm, admissionYear: e.target.value })}
+                      className="w-full px-3 py-1.5 text-xs font-semibold border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white font-mono"
+                    />
+                  </div>
+
+                  {/* Student Mobile */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1 font-sans">Student Mobile Number</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 9876543210"
+                      value={studentForm.studentMobileNumber}
+                      onChange={e => setStudentForm({ ...studentForm, studentMobileNumber: e.target.value })}
+                      className="w-full px-3 py-1.5 text-xs font-semibold border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white font-mono"
+                    />
+                  </div>
+
+                  {/* Parent Mobile */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1 font-sans">Parent Mobile Number</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 9876543211"
+                      value={studentForm.parentMobileNumber}
+                      onChange={e => setStudentForm({ ...studentForm, parentMobileNumber: e.target.value })}
+                      className="w-full px-3 py-1.5 text-xs font-semibold border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white font-mono"
+                    />
+                  </div>
+
+                  {/* Admission Date */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1 font-sans">Admission Date *</label>
+                    <input
+                      type="date"
+                      required
+                      value={studentForm.admissionDate}
+                      onChange={e => setStudentForm({ ...studentForm, admissionDate: e.target.value })}
+                      className="w-full px-3 py-1.5 text-xs font-semibold border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white font-mono"
+                    />
+                  </div>
+
+                  {/* Address */}
+                  <div className="col-span-1 sm:col-span-3">
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1 font-sans">Residential Address</label>
+                    <textarea
+                      placeholder="Enter complete resident address details..."
+                      rows={2}
+                      value={studentForm.address}
+                      onChange={e => setStudentForm({ ...studentForm, address: e.target.value })}
+                      className="w-full px-3 py-1.5 text-xs font-semibold border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setIsCreatingStudent(false)}
+                    className="px-4 py-1.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-500 cursor-pointer"
+                  >
+                    Save & Enroll Student
+                  </button>
+                </div>
+              </form>
+            )}
+
             {/* Filtering Box */}
             <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-3xs grid grid-cols-1 sm:grid-cols-4 gap-3">
               {/* Search Bar */}
@@ -2118,12 +2854,21 @@ export default function AdminDashboard({ onLogout, currentUser }: AdminDashboard
                               </span>
                             </td>
                             <td className="p-3 text-center">
-                              <button
-                                onClick={() => setSelectedStudent(student)}
-                                className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-[10px] font-bold text-slate-700 border border-slate-300 rounded-md cursor-pointer"
-                              >
-                                View Profile
-                              </button>
+                              <div className="flex items-center justify-center gap-1.5">
+                                <button
+                                  onClick={() => setSelectedStudent(student)}
+                                  className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-[10px] font-bold text-indigo-700 border border-indigo-200 rounded-md cursor-pointer transition-all"
+                                >
+                                  View Folder
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteStudent(student.id, `${student.studentName} ${student.surname}`)}
+                                  className="px-2.5 py-1 bg-red-50 hover:bg-red-100 text-[10px] font-bold text-red-700 border border-red-200 rounded-md cursor-pointer transition-all"
+                                  title="Delete Student Record"
+                                >
+                                  Delete
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         );

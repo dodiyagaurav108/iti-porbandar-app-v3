@@ -55,16 +55,25 @@ const DEFAULT_USERS: User[] = [
   {
     id: "user-admin",
     username: "admin",
-    password: "password",
+    password: "password123",
     name: "Institute Administrator",
     role: UserRole.ADMIN,
     isActive: true,
     createdAt: "2026-01-01"
   },
   {
+    id: "user-si",
+    username: "si",
+    name: "Supervisor Instructor",
+    role: UserRole.SUPERVISOR_INSTRUCTOR,
+    isActive: true,
+    createdAt: "2026-07-21",
+    supervisorNameEnglish: "Supervisor Instructor",
+    supervisorNameGujarati: "સુપરવાઇઝર ઇન્સ્ટ્રક્ટર"
+  },
+  {
     id: "user-si-ramesh",
     username: "ramesh_si",
-    password: "password",
     name: "Ramesh Patel (S.I. Welder)",
     role: UserRole.SUPERVISOR_INSTRUCTOR,
     isActive: true,
@@ -75,7 +84,6 @@ const DEFAULT_USERS: User[] = [
   {
     id: "user-si-sonal",
     username: "sonal_si",
-    password: "password",
     name: "Sonal Shah (S.I. COPA)",
     role: UserRole.SUPERVISOR_INSTRUCTOR,
     isActive: true,
@@ -86,7 +94,6 @@ const DEFAULT_USERS: User[] = [
   {
     id: "user-si-rahul",
     username: "rahul_si",
-    password: "password",
     name: "Rahul Mehta (S.I. Electrician)",
     role: UserRole.SUPERVISOR_INSTRUCTOR,
     isActive: false, // Inactive user for testing deactivation
@@ -611,6 +618,11 @@ export function getStoredData<T>(key: string): T[] {
 
 export function setStoredData<T>(key: string, data: T[]) {
   MEMORY_DB[key] = data;
+  try {
+    localStorage.setItem(key, JSON.stringify(data));
+  } catch (e) {
+    console.warn("Failed to save to localStorage", e);
+  }
 }
 
 // 1. USER APIs
@@ -631,6 +643,18 @@ export function saveUser(user: User) {
   if (isSupabaseConfigured) {
     supabase.from("users").upsert(camelToSnake(user)).then(({ error }) => {
       if (error) console.error("Failed to save user to Supabase:", error);
+    });
+  }
+}
+
+export function deleteUser(userId: string) {
+  const users = getUsers();
+  const filtered = users.filter(u => u.id !== userId);
+  setStoredData(KEYS.USERS, filtered);
+
+  if (isSupabaseConfigured) {
+    supabase.from("users").delete().eq("id", userId).then(({ error }) => {
+      if (error) console.error("Failed to delete user from Supabase:", error);
     });
   }
 }
@@ -738,6 +762,19 @@ export function saveStudent(student: Student) {
   if (isSupabaseConfigured) {
     supabase.from("students").upsert(camelToSnake(updated)).then(({ error }) => {
       if (error) console.error("Failed to save student to Supabase:", error);
+    });
+  }
+}
+
+export function deleteStudent(id: string) {
+  const students = getStudents();
+  const updated = students.filter(s => s.id !== id);
+  setStoredData(KEYS.STUDENTS, updated);
+  syncStudentsToIndexedDB(updated);
+
+  if (isSupabaseConfigured) {
+    supabase.from("students").delete().eq("id", id).then(({ error }) => {
+      if (error) console.error("Failed to delete student from Supabase:", error);
     });
   }
 }
@@ -1039,19 +1076,98 @@ export function saveLetterTemplate(batchId: string, template: string) {
 
 // Initializer & Sync down
 export function initializeStorage() {
-  // Populate MEMORY_DB with empty arrays to prevent undefined errors before sync completes
-  MEMORY_DB[KEYS.USERS] = [];
-  MEMORY_DB[KEYS.TRADES] = [];
-  MEMORY_DB[KEYS.BATCHES] = [];
-  MEMORY_DB[KEYS.STUDENTS] = [];
-  MEMORY_DB[KEYS.HISTORY] = [];
-  MEMORY_DB[KEYS.LOGS] = [];
-  MEMORY_DB[KEYS.ASSIGNMENT_HISTORY] = [];
-  MEMORY_DB[KEYS.WORKING_DAYS] = [];
-  MEMORY_DB[KEYS.ATTENDANCE] = [];
-  MEMORY_DB[KEYS.PROMOTIONS] = [];
-  MEMORY_DB[KEYS.SI_PROFILES] = [];
-  MEMORY_DB[KEYS.LEAVE_APPLICATIONS] = [];
+  // Populate MEMORY_DB with defaults or saved localStorage data
+  try {
+    const storedUsers = localStorage.getItem(KEYS.USERS);
+    MEMORY_DB[KEYS.USERS] = storedUsers ? JSON.parse(storedUsers) : [...DEFAULT_USERS];
+
+    const storedTrades = localStorage.getItem(KEYS.TRADES);
+    MEMORY_DB[KEYS.TRADES] = storedTrades ? JSON.parse(storedTrades) : [...DEFAULT_TRADES];
+
+    const storedBatches = localStorage.getItem(KEYS.BATCHES);
+    MEMORY_DB[KEYS.BATCHES] = storedBatches ? JSON.parse(storedBatches) : [...DEFAULT_BATCHES];
+
+    const storedStudents = localStorage.getItem(KEYS.STUDENTS);
+    MEMORY_DB[KEYS.STUDENTS] = storedStudents ? JSON.parse(storedStudents) : [...DEFAULT_STUDENTS];
+
+    const storedHistory = localStorage.getItem(KEYS.HISTORY);
+    MEMORY_DB[KEYS.HISTORY] = storedHistory ? JSON.parse(storedHistory) : [...DEFAULT_HISTORY];
+
+    const storedLogs = localStorage.getItem(KEYS.LOGS);
+    MEMORY_DB[KEYS.LOGS] = storedLogs ? JSON.parse(storedLogs) : [...DEFAULT_LOGS];
+
+    const storedAssignment = localStorage.getItem(KEYS.ASSIGNMENT_HISTORY);
+    MEMORY_DB[KEYS.ASSIGNMENT_HISTORY] = storedAssignment ? JSON.parse(storedAssignment) : [];
+
+    const storedWD = localStorage.getItem(KEYS.WORKING_DAYS);
+    MEMORY_DB[KEYS.WORKING_DAYS] = storedWD ? JSON.parse(storedWD) : [];
+
+    const storedAttendance = localStorage.getItem(KEYS.ATTENDANCE);
+    MEMORY_DB[KEYS.ATTENDANCE] = storedAttendance ? JSON.parse(storedAttendance) : [];
+
+    const storedPromotions = localStorage.getItem(KEYS.PROMOTIONS);
+    MEMORY_DB[KEYS.PROMOTIONS] = storedPromotions ? JSON.parse(storedPromotions) : [];
+
+    const storedSIProfiles = localStorage.getItem(KEYS.SI_PROFILES);
+    MEMORY_DB[KEYS.SI_PROFILES] = storedSIProfiles ? JSON.parse(storedSIProfiles) : [
+      {
+        id: "sip-si",
+        userId: "user-si",
+        nameEnglish: "Supervisor Instructor",
+        nameGujarati: "સુપરવાઇઝર ઇન્સ્ટ્રક્ટર",
+        designationEnglish: "Supervisor Instructor",
+        designationGujarati: "સુપરવાઇઝર ઇન્સ્ટ્રક્ટર",
+        officeEnglish: "ITI Porbandar",
+        officeGujarati: "આઈ.ટી.આઈ. પોરબંદર",
+        departmentEnglish: "ITI Porbandar",
+        departmentGujarati: "રોજગાર અને તાલીમ વિભાગ",
+        employeeId: "EMP-SI",
+        mobile: "+91 9876543210",
+        addressEnglish: "ITI Porbandar Campus",
+        addressGujarati: "આઈ.ટી.આઈ. પોરબંદર કેમ્પસ",
+        salary: "53100",
+        createdAt: "2026-07-21T00:00:00Z",
+        updatedAt: "2026-07-21T00:00:00Z"
+      }
+    ];
+
+    const storedLeave = localStorage.getItem(KEYS.LEAVE_APPLICATIONS);
+    MEMORY_DB[KEYS.LEAVE_APPLICATIONS] = storedLeave ? JSON.parse(storedLeave) : [];
+  } catch (err) {
+    console.error("Failed to read from localStorage during initializeStorage", err);
+    MEMORY_DB[KEYS.USERS] = [...DEFAULT_USERS];
+    MEMORY_DB[KEYS.TRADES] = [...DEFAULT_TRADES];
+    MEMORY_DB[KEYS.BATCHES] = [...DEFAULT_BATCHES];
+    MEMORY_DB[KEYS.STUDENTS] = [...DEFAULT_STUDENTS];
+    MEMORY_DB[KEYS.HISTORY] = [...DEFAULT_HISTORY];
+    MEMORY_DB[KEYS.LOGS] = [...DEFAULT_LOGS];
+    MEMORY_DB[KEYS.ASSIGNMENT_HISTORY] = [];
+    MEMORY_DB[KEYS.WORKING_DAYS] = [];
+    MEMORY_DB[KEYS.ATTENDANCE] = [];
+    MEMORY_DB[KEYS.PROMOTIONS] = [];
+    MEMORY_DB[KEYS.SI_PROFILES] = [
+      {
+        id: "sip-si",
+        userId: "user-si",
+        nameEnglish: "Supervisor Instructor",
+        nameGujarati: "સુપરવાઇઝર ઇન્સ્ટ્રક્ટર",
+        designationEnglish: "Supervisor Instructor",
+        designationGujarati: "સુપરવાઇઝર ઇન્સ્ટ્રક્ટર",
+        officeEnglish: "ITI Porbandar",
+        officeGujarati: "આઈ.ટી.આઈ. પોરબંદર",
+        departmentEnglish: "ITI Porbandar",
+        departmentGujarati: "રોજગાર અને તાલીમ વિભાગ",
+        employeeId: "EMP-SI",
+        mobile: "+91 9876543210",
+        addressEnglish: "ITI Porbandar Campus",
+        addressGujarati: "આઈ.ટી.આઈ. પોરબંદર કેમ્પસ",
+        salary: "53100",
+        createdAt: "2026-07-21T00:00:00Z",
+        updatedAt: "2026-07-21T00:00:00Z"
+      }
+    ];
+    MEMORY_DB[KEYS.LEAVE_APPLICATIONS] = [];
+  }
 }
 
 // 10. SI PROFILE APIs
@@ -1078,6 +1194,24 @@ export function saveSIProfile(profile: SIProfile) {
     supabase.from("si_profiles").upsert(camelToSnake(profile)).then(({ error }) => {
       if (error) console.error("Failed to save S.I. Profile to Supabase:", error);
     });
+  }
+}
+
+export function deleteSIProfile(profileId: string, userId?: string) {
+  const profiles = getSIProfiles();
+  const filtered = profiles.filter(p => p.id !== profileId && p.userId !== userId);
+  setStoredData(KEYS.SI_PROFILES, filtered);
+
+  if (isSupabaseConfigured) {
+    if (profileId) {
+      supabase.from("si_profiles").delete().eq("id", profileId).then(({ error }) => {
+        if (error) console.error("Failed to delete S.I. Profile from Supabase by id:", error);
+      });
+    } else if (userId) {
+      supabase.from("si_profiles").delete().eq("user_id", userId).then(({ error }) => {
+        if (error) console.error("Failed to delete S.I. Profile from Supabase by user_id:", error);
+      });
+    }
   }
 }
 
@@ -1133,6 +1267,59 @@ export async function syncFromSupabase() {
     return;
   }
   try {
+    // Ensure default ADMIN and SI accounts exist with correct passwords and roles on Supabase
+    const defaultAdmin: User = {
+      id: "user-admin",
+      username: "admin",
+      password: "password123",
+      name: "Institute Administrator",
+      role: UserRole.ADMIN,
+      isActive: true,
+      createdAt: "2026-01-01"
+    };
+
+    const defaultSI: User = {
+      id: "user-si",
+      username: "si",
+      name: "Supervisor Instructor",
+      role: UserRole.SUPERVISOR_INSTRUCTOR,
+      isActive: true,
+      createdAt: "2026-07-21",
+      supervisorNameEnglish: "Supervisor Instructor",
+      supervisorNameGujarati: "સુપરવાઇઝર ઇન્સ્ટ્રક્ટર"
+    };
+
+    const defaultSIProfile: SIProfile = {
+      id: "sip-si",
+      userId: "user-si",
+      nameEnglish: "Supervisor Instructor",
+      nameGujarati: "સુપરવાઇઝર ઇન્સ્ટ્રક્ટર",
+      designationEnglish: "Supervisor Instructor",
+      designationGujarati: "સુપરવાઇઝર ઇન્સ્ટ્રક્ટર",
+      officeEnglish: "ITI Porbandar",
+      officeGujarati: "આઈ.ટી.આઈ. પોરબંદર",
+      departmentEnglish: "ITI Porbandar",
+      departmentGujarati: "રોજગાર અને તાલીમ વિભાગ",
+      employeeId: "EMP-SI",
+      mobile: "+91 9876543210",
+      addressEnglish: "ITI Porbandar Campus",
+      addressGujarati: "આઈ.ટી.આઈ. પોરબંદર કેમ્પસ",
+      salary: "53100",
+      createdAt: "2026-07-21T00:00:00Z",
+      updatedAt: "2026-07-21T00:00:00Z"
+    };
+
+    try {
+      await Promise.all([
+        supabase.from("users").upsert(camelToSnake(defaultAdmin)),
+        supabase.from("users").upsert(camelToSnake(defaultSI)),
+        supabase.from("si_profiles").upsert(camelToSnake(defaultSIProfile))
+      ]);
+      console.log("Default accounts and profile verified/upserted to Supabase successfully.");
+    } catch (e) {
+      console.warn("Could not auto-upsert default accounts to Supabase:", e);
+    }
+
     const [
       { data: dbUsers, error: errUsers },
       { data: dbTrades, error: errTrades },
