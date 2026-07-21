@@ -263,12 +263,8 @@ create table if not exists monthly_attendance (
   total_present_days integer,
   attendance_percentage numeric,
   created_at timestamp with time zone default now(),
-  updated_at timestamp with time zone zone default now()
+  updated_at timestamp with time zone default now()
 );
-
--- Fix syntax: 'time zone' is correct, not 'zone'
-alter table monthly_attendance drop column if exists updated_at;
-alter table monthly_attendance add column if_not_exists updated_at timestamp with time zone default now();
 
 alter table monthly_attendance enable row level security;
 drop policy if exists "Allow public access on monthly_attendance" on monthly_attendance;
@@ -329,7 +325,7 @@ for each row execute procedure update_updated_at_column();
 -- OTHER APPLICATION TABLES FOR COMPATIBILITY
 -- ==========================================================
 
--- WORKING DAYS TABLE
+-- 13. WORKING DAYS TABLE
 create table if not exists working_days (
   id text primary key,
   academic_year text,
@@ -338,10 +334,18 @@ create table if not exists working_days (
   created_at timestamp with time zone default now(),
   updated_at timestamp with time zone default now()
 );
+
 alter table working_days enable row level security;
+drop policy if exists "Allow public access on working_days" on working_days;
 create policy "Allow public access on working_days" on working_days for all using (true) with check (true);
 
--- AUDIT LOGS TABLE
+drop trigger if exists update_working_days_updated_at on working_days;
+create trigger update_working_days_updated_at
+before update on working_days
+for each row execute procedure update_updated_at_column();
+
+
+-- 14. AUDIT LOGS TABLE
 create table if not exists audit_logs (
   id text primary key,
   user_name text,
@@ -351,20 +355,36 @@ create table if not exists audit_logs (
   created_at timestamp with time zone default now(),
   updated_at timestamp with time zone default now()
 );
+
 alter table audit_logs enable row level security;
+drop policy if exists "Allow public access on audit_logs" on audit_logs;
 create policy "Allow public access on audit_logs" on audit_logs for all using (true) with check (true);
 
--- LETTERS TABLE
+drop trigger if exists update_audit_logs_updated_at on audit_logs;
+create trigger update_audit_logs_updated_at
+before update on audit_logs
+for each row execute procedure update_updated_at_column();
+
+
+-- 15. LETTERS TABLE
 create table if not exists letters (
   id text primary key,
   template_text text,
   created_at timestamp with time zone default now(),
   updated_at timestamp with time zone default now()
 );
+
 alter table letters enable row level security;
+drop policy if exists "Allow public access on letters" on letters;
 create policy "Allow public access on letters" on letters for all using (true) with check (true);
 
--- GENERAL LETTERS TABLE
+drop trigger if exists update_letters_updated_at on letters;
+create trigger update_letters_updated_at
+before update on letters
+for each row execute procedure update_updated_at_column();
+
+
+-- 16. GENERAL LETTERS TABLE
 create table if not exists general_letters (
   id text primary key,
   template_name text,
@@ -380,10 +400,18 @@ create table if not exists general_letters (
   created_at timestamp with time zone default now(),
   updated_at timestamp with time zone default now()
 );
+
 alter table general_letters enable row level security;
+drop policy if exists "Allow public access on general_letters" on general_letters;
 create policy "Allow public access on general_letters" on general_letters for all using (true) with check (true);
 
--- ASSIGNMENT HISTORY TABLE
+drop trigger if exists update_general_letters_updated_at on general_letters;
+create trigger update_general_letters_updated_at
+before update on general_letters
+for each row execute procedure update_updated_at_column();
+
+
+-- 17. ASSIGNMENT HISTORY TABLE
 create table if not exists assignment_history (
   id text primary key,
   batch_id text,
@@ -397,10 +425,18 @@ create table if not exists assignment_history (
   created_at timestamp with time zone default now(),
   updated_at timestamp with time zone default now()
 );
+
 alter table assignment_history enable row level security;
+drop policy if exists "Allow public access on assignment_history" on assignment_history;
 create policy "Allow public access on assignment_history" on assignment_history for all using (true) with check (true);
 
--- PROMOTIONS TABLE
+drop trigger if exists update_assignment_history_updated_at on assignment_history;
+create trigger update_assignment_history_updated_at
+before update on assignment_history
+for each row execute procedure update_updated_at_column();
+
+
+-- 18. PROMOTIONS TABLE
 create table if not exists promotions (
   id text primary key,
   student_id text,
@@ -424,10 +460,18 @@ create table if not exists promotions (
   created_at timestamp with time zone default now(),
   updated_at timestamp with time zone default now()
 );
+
 alter table promotions enable row level security;
+drop policy if exists "Allow public access on promotions" on promotions;
 create policy "Allow public access on promotions" on promotions for all using (true) with check (true);
 
--- STUDENT STATUS HISTORY TABLE
+drop trigger if exists update_promotions_updated_at on promotions;
+create trigger update_promotions_updated_at
+before update on promotions
+for each row execute procedure update_updated_at_column();
+
+
+-- 19. STUDENT STATUS HISTORY TABLE
 create table if not exists student_status_history (
   id text primary key,
   student_id text,
@@ -445,10 +489,18 @@ create table if not exists student_status_history (
   created_at timestamp with time zone default now(),
   updated_at timestamp with time zone default now()
 );
+
 alter table student_status_history enable row level security;
+drop policy if exists "Allow public access on student_status_history" on student_status_history;
 create policy "Allow public access on student_status_history" on student_status_history for all using (true) with check (true);
 
--- SI PROFILES TABLE
+drop trigger if exists update_student_status_history_updated_at on student_status_history;
+create trigger update_student_status_history_updated_at
+before update on student_status_history
+for each row execute procedure update_updated_at_column();
+
+
+-- 20. SI PROFILES TABLE
 create table if not exists si_profiles (
   id text primary key,
   user_id text unique,
@@ -468,10 +520,18 @@ create table if not exists si_profiles (
   created_at timestamp with time zone default now(),
   updated_at timestamp with time zone default now()
 );
+
 alter table si_profiles enable row level security;
+drop policy if exists "Allow public access on si_profiles" on si_profiles;
 create policy "Allow public access on si_profiles" on si_profiles for all using (true) with check (true);
 
--- LEAVE APPLICATIONS TABLE
+drop trigger if exists update_si_profiles_updated_at on si_profiles;
+create trigger update_si_profiles_updated_at
+before update on si_profiles
+for each row execute procedure update_updated_at_column();
+
+
+-- 21. LEAVE APPLICATIONS TABLE
 create table if not exists leave_applications (
   id text primary key,
   user_id text,
@@ -509,10 +569,18 @@ create table if not exists leave_applications (
   created_at timestamp with time zone default now(),
   updated_at timestamp with time zone default now()
 );
+
 alter table leave_applications enable row level security;
+drop policy if exists "Allow public access on leave_applications" on leave_applications;
 create policy "Allow public access on leave_applications" on leave_applications for all using (true) with check (true);
 
--- SCHOLARSHIP TABLE
+drop trigger if exists update_leave_applications_updated_at on leave_applications;
+create trigger update_leave_applications_updated_at
+before update on leave_applications
+for each row execute procedure update_updated_at_column();
+
+
+-- 22. SCHOLARSHIP TABLE
 create table if not exists scholarship (
   id text primary key,
   student_id text references students(id) on delete cascade,
@@ -523,5 +591,12 @@ create table if not exists scholarship (
   created_at timestamp with time zone default now(),
   updated_at timestamp with time zone default now()
 );
+
 alter table scholarship enable row level security;
+drop policy if exists "Allow public access on scholarship" on scholarship;
 create policy "Allow public access on scholarship" on scholarship for all using (true) with check (true);
+
+drop trigger if exists update_scholarship_updated_at on scholarship;
+create trigger update_scholarship_updated_at
+before update on scholarship
+for each row execute procedure update_updated_at_column();
